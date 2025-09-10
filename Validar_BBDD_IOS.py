@@ -339,15 +339,4 @@ csv_validos = df_validos.to_csv(index=False).encode("utf-8-sig")
 st.download_button("Descargar CSV de registros válidos", data=csv_validos,
                    file_name="registros_validos.csv", mime="text/csv")
 
-with st.expander("ℹ️ Notas", expanded=False):
-    st.markdown(
-        """
-- Se busca la **tabla** `BBDD_IOS_LAB` únicamente en la **hoja** `BBDD_IOS`.  
-- Si no está expuesta como tabla, se usa la hoja completa y se permite mapeo manual de columnas clave.  
-- Columnas SIEMPRE presentes en salidas: **País, Departamento, Municipio, SITIOS, Id paciente / No. Expediente, Edad, Sexo** (se crean vacías si faltan).  
-- Reglas:  
-  - `Fecha toma de muestra` ≥ `Fecha solicitud` (pueden ser iguales).  
-  - `Fecha realización` ≥ `Fecha toma de muestra` y ≥ `Fecha solicitud`.  
-- Exportación: nombres de hoja sanitizados y únicos (evita `InvalidWorksheetName`).  
-        """
-    )
+
