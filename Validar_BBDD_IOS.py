@@ -10,7 +10,7 @@ import pandas as pd
 import streamlit as st
 
 st.set_page_config(page_title="Validaciones IOS - BBDD_IOS_LAB", page_icon="🧪", layout="wide")
-st.title("🧪 Validaciones IOS – BBDD_IOS_LAB en hoja BBDD_IOS")
+st.title("🧪 Validaciones BBDD_IOS_")
 
 # ====================== Dependencia opcional ======================
 try:
@@ -391,6 +391,7 @@ df_validos = with_missing_cols(df_validos, cols_show)  # asegurar columnas y ord
 csv_validos = df_validos.to_csv(index=False).encode("utf-8-sig")
 st.download_button("Descargar CSV de registros válidos", data=csv_validos,
                    file_name="registros_validos.csv", mime="text/csv")
+
 
 
 
