@@ -10,7 +10,7 @@ import pandas as pd
 import streamlit as st
 
 st.set_page_config(page_title="Validaciones IOS - BBDD_IOS_LAB", page_icon="🧪", layout="wide")
-st.title("🕵️‍♂️ Validaciones BBDD_IOS")
+st.title("🧪 Validaciones IOS – BBDD_IOS_LAB en hoja BBDD_IOS")
 
 # ====================== Dependencia opcional ======================
 try:
@@ -49,15 +49,46 @@ def _sanitize_sheet_name(name: str, used: set) -> str:
     used.add(candidate)
     return candidate
 
-def dataframe_to_excel_bytes(dfs: Dict[str, pd.DataFrame]) -> bytes:
+def dataframe_to_excel_bytes_with_highlights(dfs: Dict[str, pd.DataFrame]) -> bytes:
+    """
+    Exporta varias hojas a Excel con:
+      - Nombres de hoja saneados/únicos
+      - Encabezado gris
+      - Auto-filtro y panes congelados
+      - Filas de hojas de ERRORES resaltadas en rojo (todas menos 'Resumen')
+    """
     output = io.BytesIO()
     used = set()
     with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
         for name, d in dfs.items():
+            df = d if isinstance(d, pd.DataFrame) else pd.DataFrame(d)
             safe_name = _sanitize_sheet_name(str(name), used)
-            (d if isinstance(d, pd.DataFrame) else pd.DataFrame(d)).to_excel(
-                writer, index=False, sheet_name=safe_name
-            )
+            df.to_excel(writer, index=False, sheet_name=safe_name)
+            wb  = writer.book
+            ws  = writer.sheets[safe_name]
+            nrows, ncols = df.shape
+
+            # Formatos
+            fmt_header = wb.add_format({'bold': True, 'bg_color': '#F2F2F2', 'border': 0})
+            fmt_error  = wb.add_format({'bg_color': '#FFC7CE'})  # rojo suave
+            # Encabezado
+            ws.set_row(0, None, fmt_header)
+            # Anchos y utilidades
+            try:
+                ws.set_column(0, ncols-1, 18)
+            except Exception:
+                pass
+            if nrows > 0 and ncols > 0:
+                ws.autofilter(0, 0, nrows, ncols-1)
+            ws.freeze_panes(1, 0)
+
+            # Resaltar en rojo todas las filas de hojas de errores (todas menos 'Resumen')
+            if safe_name.lower() != "resumen" and nrows > 0 and ncols > 0:
+                # desde fila 1 (segunda fila, debajo del header) hasta nrows
+                ws.conditional_format(
+                    1, 0, nrows, ncols-1,
+                    {'type': 'formula', 'criteria': '=TRUE', 'format': fmt_error}
+                )
     return output.getvalue()
 
 def strip_accents(s: str) -> str:
@@ -93,7 +124,7 @@ HEADER_ALIASES = {
 
     # Contexto
     "pais": "País",
-    "paispais": "País",  # por si viene duplicado raro
+    "país": "País",
     "departamento": "Departamento",
     "depto": "Departamento",
     "municipio": "Municipio",
@@ -285,10 +316,10 @@ tablas = {
     "Vacías - Fecha solicitud": with_missing_cols(v_solicitud, cols_show),
     "Vacías - Fecha toma de muestra": with_missing_cols(v_toma, cols_show),
     "Vacías - Fecha realización": with_missing_cols(v_realiz, cols_show),
-    "Resultado de la prueba vacío": with_missing_cols(v_result, cols_show),
-    "Orden: Fecha de toma < Fecha de solicitud": with_missing_cols(err_toma_lt_sol, cols_show),
-    "Orden: Fecha de realización < Fecha de toma de muestra": with_missing_cols(err_real_lt_toma, cols_show),
-    "Orden: Fecha de realización < Fecha de solicitud": with_missing_cols(err_real_lt_sol, cols_show),
+    "Resultado vacío": with_missing_cols(v_result, cols_show),
+    "Orden: toma < solicitud": with_missing_cols(err_toma_lt_sol, cols_show),
+    "Orden: realiz < toma": with_missing_cols(err_real_lt_toma, cols_show),
+    "Orden: realiz < solicitud": with_missing_cols(err_real_lt_sol, cols_show),
 }
 
 resumen = pd.DataFrame([
@@ -320,15 +351,16 @@ for nombre, d in tablas.items():
         else:
             st.dataframe(d, use_container_width=True)
 
-# ====================== Descargas ======================
+# ====================== Descargas (con resaltado en rojo) ======================
 st.subheader("⬇️ Descargar resultados")
 to_export = {"Resumen": resumen}
 to_export.update(tablas)
-xlsx_bytes = dataframe_to_excel_bytes(to_export)
-st.download_button("Descargar Excel (resumen + errores)", data=xlsx_bytes,
+xlsx_bytes = dataframe_to_excel_bytes_with_highlights(to_export)
+st.download_button("Descargar Excel (resumen + errores resaltados)", data=xlsx_bytes,
                    file_name="validaciones_bbdd_ios_lab.xlsx",
                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
+# (opcional) Válidos sin violaciones de orden ni fechas vacías
 invalid_idx = (
     set(v_solicitud.index) | set(v_toma.index) | set(v_realiz.index) |
     set(err_toma_lt_sol.index) | set(err_real_lt_toma.index) | set(err_real_lt_sol.index)
