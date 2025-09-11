@@ -69,7 +69,7 @@ def dataframe_to_excel_bytes_with_highlights(dfs: Dict[str, pd.DataFrame]) -> by
             nrows, ncols = df.shape
 
             # Formatos
-            fmt_header = wb.add_format({'bold': True, 'bg_color': '#F2F2F2', 'border': 0})
+            fmt_header = wb.add_format({'bold': True, 'bg_color': '#F2F2F2'})
             fmt_error  = wb.add_format({'bg_color': '#FFC7CE'})  # rojo suave
             # Encabezado
             ws.set_row(0, None, fmt_header)
@@ -84,7 +84,6 @@ def dataframe_to_excel_bytes_with_highlights(dfs: Dict[str, pd.DataFrame]) -> by
 
             # Resaltar en rojo todas las filas de hojas de errores (todas menos 'Resumen')
             if safe_name.lower() != "resumen" and nrows > 0 and ncols > 0:
-                # desde fila 1 (segunda fila, debajo del header) hasta nrows
                 ws.conditional_format(
                     1, 0, nrows, ncols-1,
                     {'type': 'formula', 'criteria': '=TRUE', 'format': fmt_error}
@@ -95,16 +94,16 @@ def strip_accents(s: str) -> str:
     return "".join(ch for ch in unicodedata.normalize("NFKD", str(s)) if not unicodedata.combining(ch))
 
 def norm_header(s: str) -> str:
-    # Normaliza encabezados: minúsculas, sin acentos, reemplaza espacios/_/.-/slash por espacio, colapsa espacios
+    # Normaliza encabezados: minúsculas, sin acentos, reemplaza espacios/_/.-/:/slash por espacio, colapsa espacios
     s = strip_accents(str(s)).lower().strip()
-    s = re.sub(r"[\s_\.\-\/]+", " ", s)
+    s = re.sub(r"[\s_\.\-\/:]+", " ", s)
     s = re.sub(r"\s+", " ", s)
     return s
 
 def compact(s: str) -> str:
     return norm_header(s).replace(" ", "")
 
-# ---- Aliases → canónico (fechas/resultado + contexto + extra campos solicitados) ----
+# ---- Aliases → canónico (fechas/resultado + contexto + extras + nuevas) ----
 HEADER_ALIASES = {
     # Fechas / Resultado
     "fechasolicitud": "Fecha solicitud",
@@ -122,7 +121,7 @@ HEADER_ALIASES = {
     "resultado": "Resultado",
     "resultadofinal": "Resultado",
 
-    # Contexto
+    # Contexto base
     "pais": "País",
     "país": "País",
     "departamento": "Departamento",
@@ -139,7 +138,6 @@ HEADER_ALIASES = {
     "identificacionpaciente": "Id paciente / No. Expediente",
     "noexpediente": "Id paciente / No. Expediente",
     "nroexpediente": "Id paciente / No. Expediente",
-    "nrodoexpediente": "Id paciente / No. Expediente",
     "numeroexpediente": "Id paciente / No. Expediente",
     "numerodeexpediente": "Id paciente / No. Expediente",
     "nexpediente": "Id paciente / No. Expediente",
@@ -155,11 +153,20 @@ HEADER_ALIASES = {
     "genero": "Sexo",
     "género": "Sexo",
     "sex": "Sexo",
+
+    # Nuevas columnas
+    "seleccionelapruebaarealizar": "Seleccione la prueba a realizar",
+    "seleccionepruebaarealizar": "Seleccione la prueba a realizar",
+    "observaciones": "Observaciones",
+    "observacion": "Observaciones",
+    "observación": "Observaciones",
 }
 
 REQ_COLS_CANON = ["Fecha solicitud", "Fecha toma de muestra", "Fecha realización", "Resultado"]
-CONTEXT_COLS = ["País", "Departamento", "Municipio", "SITIOS"]
+CONTEXT_COLS_BASE = ["País", "Departamento", "Municipio", "SITIOS"]
 EXTRA_COLS = ["Id paciente / No. Expediente", "Edad", "Sexo"]
+# Observaciones irá **después de Resultado** en la salida; aquí solo nos aseguramos que exista
+NEW_COLS = ["Seleccione la prueba a realizar", "Observaciones"]
 
 def to_datetime_safe(s, dayfirst=True):
     return pd.to_datetime(s, errors="coerce", dayfirst=dayfirst)
@@ -171,12 +178,21 @@ def is_empty_result(x) -> bool:
     return s == "" or s in {"nan", "na", "none"}
 
 def rename_to_canonical(df: pd.DataFrame) -> pd.DataFrame:
-    """Renombra encabezados a canónicos cuando coinciden con alias frecuentes."""
+    """Renombra encabezados a canónicos cuando coinciden con alias; además, heurísticas para variantes."""
     newcols = {}
     for c in df.columns:
         key = compact(c)
+        mapped = None
         if key in HEADER_ALIASES:
-            newcols[c] = HEADER_ALIASES[key]
+            mapped = HEADER_ALIASES[key]
+        else:
+            # Heurísticas por contención (p.ej., si viene con dos puntos, duplicado de texto, etc.)
+            if "seleccionelapruebaarealizar" in key:
+                mapped = "Seleccione la prueba a realizar"
+            elif "observacion" in key or "observación" in key:
+                mapped = "Observaciones"
+        if mapped:
+            newcols[c] = mapped
     if newcols:
         df = df.rename(columns=newcols)
     return df
@@ -228,7 +244,7 @@ else:
     df_raw = pd.read_excel(io.BytesIO(file_bytes), sheet_name=hoja_fija, engine="openpyxl", dtype=object)
     header_row_excel = 1
 
-# Renombrar a canónicos (incluye contexto y extras)
+# Renombrar a canónicos (incluye contexto, extras y nuevas)
 df = rename_to_canonical(df_raw.copy())
 
 # Si faltan fechas/resultado, ofrecer mapeo manual mínimo
@@ -265,8 +281,10 @@ if faltan:
         s_res: "Resultado",
     })
 
-# Asegurar columnas de contexto y extras ANTES de filtrar
-df = ensure_columns(df, CONTEXT_COLS + EXTRA_COLS)
+# Asegurar columnas de contexto, extras y nuevas (antes del filtrado)
+# IMPORTANTE: Observaciones se mostrará **después de Resultado** en la salida
+pre_result_context = CONTEXT_COLS_BASE + ["Seleccione la prueba a realizar"] + EXTRA_COLS
+df = ensure_columns(df, pre_result_context + ["Observaciones"])
 
 # Añadir número de fila real de Excel
 df["Fila (Excel)"] = header_row_excel + 1 + df.index
@@ -300,9 +318,12 @@ err_real_lt_sol = df[
     & (df["Fecha realización"] < df["Fecha solicitud"])
 ]
 
-# Columnas que deben existir en TODAS las salidas
-context_cols = CONTEXT_COLS + EXTRA_COLS
-cols_show = context_cols + ["Fila (Excel)", "Fecha solicitud", "Fecha toma de muestra", "Fecha realización", "Resultado"]
+# ============ ORDEN FINAL PARA LAS SALIDAS ============
+# Observaciones **después de Resultado**
+cols_show = pre_result_context + [
+    "Fila (Excel)", "Fecha solicitud", "Fecha toma de muestra", "Fecha realización", "Resultado",
+    "Observaciones"
+]
 
 # (Por seguridad, reaseguramos las columnas en cada subset)
 def with_missing_cols(dsub: pd.DataFrame, cols: List[str]) -> pd.DataFrame:
@@ -366,9 +387,11 @@ invalid_idx = (
     set(err_toma_lt_sol.index) | set(err_real_lt_toma.index) | set(err_real_lt_sol.index)
 )
 df_validos = df[~df.index.isin(invalid_idx)].copy()
-df_validos = with_missing_cols(df_validos, cols_show)  # asegurar columnas en el mismo orden
+df_validos = with_missing_cols(df_validos, cols_show)  # asegurar columnas y orden final (Obs. tras Resultado)
 csv_validos = df_validos.to_csv(index=False).encode("utf-8-sig")
 st.download_button("Descargar CSV de registros válidos", data=csv_validos,
                    file_name="registros_validos.csv", mime="text/csv")
+
+
 
 
