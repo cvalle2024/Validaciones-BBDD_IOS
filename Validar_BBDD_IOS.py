@@ -9,8 +9,8 @@ from typing import Optional, Tuple, Dict, List
 import pandas as pd
 import streamlit as st
 
-st.set_page_config(page_title="Validaciones IOS - BBDD_IOS_LAB", page_icon="🧪", layout="wide")
-st.title("🧪 Validaciones BBDD_IOS_")
+st.set_page_config(page_title="Validaciones IOS - BBDD_IOS", page_icon="🧪", layout="wide")
+st.title("🕵️‍♂️ Validaciones IOS – BBDD_IOS")
 
 # ====================== Dependencia opcional ======================
 try:
@@ -154,12 +154,26 @@ HEADER_ALIASES = {
     "género": "Sexo",
     "sex": "Sexo",
 
-    # Nuevas columnas
+    # Nuevas columnas (ya existentes previamente)
     "seleccionelapruebaarealizar": "Seleccione la prueba a realizar",
     "seleccionepruebaarealizar": "Seleccione la prueba a realizar",
     "observaciones": "Observaciones",
     "observacion": "Observaciones",
     "observación": "Observaciones",
+
+    # ===== Alias para VALIDACIONES NUEVAS =====
+    # Laboratorio donde procesa la muestra
+    "laboratoriodondeprocesalamuestra": "Laboratorio donde procesa la muestra",
+    "laboratoriodondeprocesa": "Laboratorio donde procesa la muestra",
+    "labdondeprocesalamuestra": "Laboratorio donde procesa la muestra",
+    "labdondeprocesa": "Laboratorio donde procesa la muestra",
+    "laboratorioprocesamuestra": "Laboratorio donde procesa la muestra",
+
+    # Conteo CD4 (Cel/uL)
+    "conteocd4celul": "Conteo CD4 (Cel/uL)",
+    "conteocd4": "Conteo CD4 (Cel/uL)",
+    "cd4conteo": "Conteo CD4 (Cel/uL)",
+    "conteodecd4": "Conteo CD4 (Cel/uL)",
 }
 
 REQ_COLS_CANON = ["Fecha solicitud", "Fecha toma de muestra", "Fecha realización", "Resultado"]
@@ -167,6 +181,9 @@ CONTEXT_COLS_BASE = ["País", "Departamento", "Municipio", "SITIOS"]
 EXTRA_COLS = ["Id paciente / No. Expediente", "Edad", "Sexo"]
 # Observaciones irá **después de Resultado** en la salida; aquí solo nos aseguramos que exista
 NEW_COLS = ["Seleccione la prueba a realizar", "Observaciones"]
+
+# NUEVAS columnas a validar (no vacías)
+VALIDATION_NEW_COLS = ["Laboratorio donde procesa la muestra", "Conteo CD4 (Cel/uL)"]
 
 def to_datetime_safe(s, dayfirst=True):
     return pd.to_datetime(s, errors="coerce", dayfirst=dayfirst)
@@ -191,6 +208,10 @@ def rename_to_canonical(df: pd.DataFrame) -> pd.DataFrame:
                 mapped = "Seleccione la prueba a realizar"
             elif "observacion" in key or "observación" in key:
                 mapped = "Observaciones"
+            elif "laboratorio" in key and "procesa" in key and "muestra" in key:
+                mapped = "Laboratorio donde procesa la muestra"
+            elif ("conteo" in key and "cd4" in key) or ("cd4" in key and "cel" in key):
+                mapped = "Conteo CD4 (Cel/uL)"
         if mapped:
             newcols[c] = mapped
     if newcols:
@@ -281,10 +302,9 @@ if faltan:
         s_res: "Resultado",
     })
 
-# Asegurar columnas de contexto, extras y nuevas (antes del filtrado)
-# IMPORTANTE: Observaciones se mostrará **después de Resultado** en la salida
+# Asegurar columnas de contexto, extras, nuevas y las de VALIDACIÓN NUEVA (antes del filtrado)
 pre_result_context = CONTEXT_COLS_BASE + ["Seleccione la prueba a realizar"] + EXTRA_COLS
-df = ensure_columns(df, pre_result_context + ["Observaciones"])
+df = ensure_columns(df, pre_result_context + ["Observaciones"] + VALIDATION_NEW_COLS)
 
 # Añadir número de fila real de Excel
 df["Fila (Excel)"] = header_row_excel + 1 + df.index
@@ -301,6 +321,10 @@ v_solicitud = df[df["Fecha solicitud"].isna()]
 v_toma      = df[df["Fecha toma de muestra"].isna()]
 v_realiz    = df[df["Fecha realización"].isna()]
 v_result    = df[df["Resultado"].apply(is_empty_result)]
+
+# NUEVAS: no vacío en "Laboratorio..." y "Conteo CD4..."
+v_lab_vacio = df[df["Laboratorio donde procesa la muestra"].apply(is_empty_result)]
+v_cd4_vacio = df[df["Conteo CD4 (Cel/uL)"].apply(is_empty_result)]
 
 err_toma_lt_sol = df[
     df["Fecha toma de muestra"].notna()
@@ -320,12 +344,12 @@ err_real_lt_sol = df[
 
 # ============ ORDEN FINAL PARA LAS SALIDAS ============
 # Observaciones **después de Resultado**
-cols_show = pre_result_context + [
-    "Fila (Excel)", "Fecha solicitud", "Fecha toma de muestra", "Fecha realización", "Resultado",
-    "Observaciones"
-]
+cols_show = (
+    pre_result_context
+    + ["Laboratorio donde procesa la muestra", "Conteo CD4 (Cel/uL)"]
+    + ["Fila (Excel)", "Fecha solicitud", "Fecha toma de muestra", "Fecha realización", "Resultado", "Observaciones"]
+)
 
-# (Por seguridad, reaseguramos las columnas en cada subset)
 def with_missing_cols(dsub: pd.DataFrame, cols: List[str]) -> pd.DataFrame:
     out = dsub.copy()
     for c in cols:
@@ -338,6 +362,11 @@ tablas = {
     "Vacías - Fecha toma de muestra": with_missing_cols(v_toma, cols_show),
     "Vacías - Fecha realización": with_missing_cols(v_realiz, cols_show),
     "Resultado vacío": with_missing_cols(v_result, cols_show),
+
+    # NUEVAS
+    "Vacías - Lab procesa muestra": with_missing_cols(v_lab_vacio, cols_show),
+    "Vacías - Conteo CD4 (Cel/uL)": with_missing_cols(v_cd4_vacio, cols_show),
+
     "Orden: toma < solicitud": with_missing_cols(err_toma_lt_sol, cols_show),
     "Orden: realiz < toma": with_missing_cols(err_real_lt_toma, cols_show),
     "Orden: realiz < solicitud": with_missing_cols(err_real_lt_sol, cols_show),
@@ -348,6 +377,11 @@ resumen = pd.DataFrame([
     {"Error": "Fecha toma de muestra vacía", "Conteo": len(v_toma)},
     {"Error": "Fecha realización vacía", "Conteo": len(v_realiz)},
     {"Error": "Resultado vacío", "Conteo": len(v_result)},
+
+    # NUEVAS en resumen
+    {"Error": "Laboratorio procesa muestra vacío", "Conteo": len(v_lab_vacio)},
+    {"Error": "Conteo CD4 (Cel/uL) vacío", "Conteo": len(v_cd4_vacio)},
+
     {"Error": "toma < solicitud", "Conteo": len(err_toma_lt_sol)},
     {"Error": "realización < toma", "Conteo": len(err_real_lt_toma)},
     {"Error": "realización < solicitud", "Conteo": len(err_real_lt_sol)},
@@ -377,9 +411,12 @@ st.subheader("⬇️ Descargar resultados")
 to_export = {"Resumen": resumen}
 to_export.update(tablas)
 xlsx_bytes = dataframe_to_excel_bytes_with_highlights(to_export)
-st.download_button("Descargar Excel (resumen + errores resaltados)", data=xlsx_bytes,
-                   file_name="validaciones_bbdd_ios_lab.xlsx",
-                   mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+st.download_button(
+    "Descargar Excel (resumen + errores resaltados)",
+    data=xlsx_bytes,
+    file_name="validaciones_bbdd_ios_lab.xlsx",
+    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+)
 
 # (opcional) Válidos sin violaciones de orden ni fechas vacías
 invalid_idx = (
@@ -391,6 +428,8 @@ df_validos = with_missing_cols(df_validos, cols_show)  # asegurar columnas y ord
 csv_validos = df_validos.to_csv(index=False).encode("utf-8-sig")
 st.download_button("Descargar CSV de registros válidos", data=csv_validos,
                    file_name="registros_validos.csv", mime="text/csv")
+
+
 
 
 
