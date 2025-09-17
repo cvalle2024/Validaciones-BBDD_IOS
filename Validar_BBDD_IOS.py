@@ -412,7 +412,7 @@ resultado_vacio = int(
 )
 
 c1, c2, c3, c4 = st.columns(4)
-#c1.metric("Registros totales", f"{total:,}")
+c1.metric("Registros totales", f"{total:,}")
 #c2.metric("Fechas vacías (suma)", f"{total_fechas_vacias:,}")
 #c3.metric("Resultado vacío", f"{resultado_vacio:,}")
 #c4.metric("Reglas de orden incumplidas", f"{total_reglas_orden:,}")
@@ -461,6 +461,7 @@ df_validos = with_missing_cols(df_validos, cols_show)  # asegurar columnas y ord
 csv_validos = df_validos.to_csv(index=False).encode("utf-8-sig")
 st.download_button("Descargar CSV de registros válidos", data=csv_validos,
                    file_name="registros_validos.csv", mime="text/csv")
+
 
 
 
