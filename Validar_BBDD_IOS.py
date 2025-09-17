@@ -389,14 +389,47 @@ resumen = pd.DataFrame([
 resumen["% del total"] = (resumen["Conteo"] / total * 100).round(2) if total else 0.0
 
 # ====================== UI ======================
+# ====================== UI ======================
 st.subheader("📊 Resumen de validaciones")
+
+# Fila 0: totales y agregados (se mantienen)
+total_fechas_vacias = int(
+    resumen[resumen["Error"].isin([
+        "Fecha solicitud vacía",
+        "Fecha toma de muestra vacía",
+        "Fecha realización vacía",
+    ])]["Conteo"].sum()
+)
+total_reglas_orden = int(
+    resumen[resumen["Error"].isin([
+        "toma < solicitud",
+        "realización < toma",
+        "realización < solicitud",
+    ])]["Conteo"].sum()
+)
+resultado_vacio = int(
+    resumen.loc[resumen["Error"] == "Resultado vacío", "Conteo"].sum()
+)
+
 c1, c2, c3, c4 = st.columns(4)
 c1.metric("Registros totales", f"{total:,}")
-c2.metric("Fechas vacías (suma)", f"{len(v_solicitud)+len(v_toma)+len(v_realiz):,}")
-c3.metric("Resultado vacío", f"{len(v_result):,}")
-c4.metric("Reglas de orden incumplidas", f"{len(err_toma_lt_sol)+len(err_real_lt_toma)+len(err_real_lt_sol):,}")
+c2.metric("Fechas vacías (suma)", f"{total_fechas_vacias:,}")
+c3.metric("Resultado vacío", f"{resultado_vacio:,}")
+c4.metric("Reglas de orden incumplidas", f"{total_reglas_orden:,}")
 
-st.dataframe(resumen.sort_values("Conteo", ascending=False), use_container_width=True)
+# Filas siguientes: tarjetas para TODAS las validaciones (dinámico)
+res_sorted = resumen.sort_values("Conteo", ascending=False).reset_index(drop=True)
+per_row = 4  # cambia a 3 o 5 si prefieres otro ancho
+for i in range(0, len(res_sorted), per_row):
+    cols = st.columns(per_row)
+    chunk = res_sorted.iloc[i:i+per_row]
+    for col, (_, row) in zip(cols, chunk.iterrows()):
+        # Muestra el % del total en el "delta"
+        col.metric(row["Error"], f"{int(row['Conteo']):,}", f"{row['% del total']}%")
+
+# Mantén la tabla resumen debajo
+st.dataframe(res_sorted, use_container_width=True)
+
 
 st.subheader("🧾 Detalle por tipo de error")
 for nombre, d in tablas.items():
@@ -428,6 +461,7 @@ df_validos = with_missing_cols(df_validos, cols_show)  # asegurar columnas y ord
 csv_validos = df_validos.to_csv(index=False).encode("utf-8-sig")
 st.download_button("Descargar CSV de registros válidos", data=csv_validos,
                    file_name="registros_validos.csv", mime="text/csv")
+
 
 
 
